@@ -29,10 +29,15 @@ dialog{border:1px solid var(--bd);border-radius:12px;background:var(--card);colo
 .g{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}.g label{display:flex;flex-direction:column;font-size:13px;gap:3px}
 canvas{width:100%;background:var(--card);border:1px solid var(--bd);border-radius:10px}
 .pad{padding:0 10px 10px}
+.lnk{border:0;background:none;color:var(--ac);padding:0;text-decoration:underline;cursor:pointer;font:inherit}
+.av img{width:100%;height:100%;object-fit:cover;border-radius:50%}
+.av{overflow:hidden;width:52px;height:52px;border-radius:50%;background:var(--ac);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px;flex:none}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}.g2 .card{font-size:14px}
+@media(max-width:420px){.g2{grid-template-columns:1fr}}
 </style></head><body>
 <header><h1>İK Yönetim Paneli</h1><button id="th" aria-label="Temayı değiştir">◐ Tema</button></header>
 <nav id="nav" aria-label="Modüller"></nav><main id="main" tabindex="-1"></main>
-<dialog id="dlg" aria-label="Form"></dialog><input type="file" id="file" accept=".csv,text/csv" hidden>
+<dialog id="dlg" aria-label="Form"></dialog><input type="file" id="file" accept=".csv,text/csv" hidden><input type="file" id="pfile" accept="image/*" hidden><input type="file" id="jfile" accept=".json,application/json" hidden>
 <script>
 'use strict';
 /* ======== 1) SAF İŞ MANTIĞI (UI'dan bağımsız, test edilebilir) ======== */
@@ -118,7 +123,9 @@ const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(db))}catch(e){}};
 const E={k:'emp',l:'Çalışan',e:1,r:1},sd=sc=>(db.emp.find(e=>e.sicil===sc)||{}).maas||0;
 const SH={
 emp:{t:'Çalışanlar',e:'Henüz çalışan kaydı yok',pf:'durum',n:'Çalışan kaydı tek doğruluk kaynağıdır. Ayrılan çalışan silinmez, “Ayrıldı” yapılır: geçmiş izin, performans ve eğitim kayıtları bozulmaz. Sicil no değişirse bağlı tüm kayıtlar otomatik güncellenir.',
- f:[{k:'sicil',l:'Sicil No',r:1,u:1},{k:'ad',l:'Ad Soyad',r:1},{k:'dept',l:'Departman',r:1},{k:'poz',l:'Pozisyon'},{k:'yon',l:'Yönetici'},{k:'giris',l:'İşe Giriş',t:'date',r:1},{k:'dogum',l:'Doğum Tarihi',t:'date'},{k:'tur',l:'Sözleşme',o:['Belirsiz','Belirli','Deneme']},{k:'maas',l:'Aylık Brüt',t:'money'},{k:'durum',l:'Durum',o:['Aktif','Ayrıldı']},{k:'ayrilis',l:'Ayrılış',t:'date',h:1}],
+ f:[{k:'sicil',l:'Sicil No',r:1,u:1},{k:'ad',l:'Ad Soyad',r:1},{k:'dept',l:'Departman',r:1},{k:'poz',l:'Pozisyon'},{k:'yon',l:'Yönetici'},{k:'giris',l:'İşe Giriş',t:'date',r:1},{k:'dogum',l:'Doğum Tarihi',t:'date'},{k:'tur',l:'Sözleşme',o:['Belirsiz','Belirli','Deneme']},{k:'maas',l:'Aylık Brüt',t:'money'},{k:'durum',l:'Durum',o:['Aktif','Ayrıldı']},{k:'ayrilis',l:'Ayrılış',t:'date',h:1},
+  // Özlük bilgileri (personel dosyası)
+  {k:'tc',l:'TC Kimlik No',h:1},{k:'dogumYeri',l:'Doğum Yeri',h:1},{k:'medeni',l:'Medeni Durum',o:['','Bekar','Evli'],h:1},{k:'askerlik',l:'Askerlik Durumu',o:['','Yapıldı','Tecilli','Muaf','-'],h:1},{k:'kan',l:'Kan Grubu',h:1},{k:'banka',l:'Banka',h:1},{k:'iban',l:'IBAN',h:1},{k:'acilKisi',l:'Acil Durum Kişisi',h:1},{k:'acilTel',l:'Acil Durum Tel',t:'tel',h:1}],
  c:[['Kıdem',r=>[tenure(r.giris)]]],v:r=>r.durum==='Ayrıldı'&&!r.ayrilis?'Ayrıldı durumunda ayrılış tarihi zorunludur.':''},
 leave:{t:'İzin Yönetimi',e:'Henüz izin talebi yok',pf:'durum',n:'Yıllık izin hak edişe göre kullanılır ve bakiyeden düşer; ücretsiz ve raporlu izin haktan düşmez. Süre iş günü olarak hesaplanır (hafta sonu ve resmi tatil hariç).',
  f:[E,{k:'tur',l:'Tür',o:['Yıllık','Mazeret','Ücretsiz','Raporlu','Doğum','Evlilik']},{k:'bas',l:'Başlangıç',t:'date',r:1},{k:'bit',l:'Bitiş',t:'date',r:1},{k:'acik',l:'Açıklama',h:1},{k:'talep',l:'Talep Tarihi',t:'date',d:today},{k:'durum',l:'Durum',o:['Beklemede','Onaylandı','Reddedildi']}],
@@ -151,19 +158,22 @@ hol:{t:'Resmi Tatiller',src:'holidays',e:'Henüz tatil eklenmedi',
 /* ======== 4) UI ======== */
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let tab='dash',view={q:'',f:'',s:'',d:1};
+let sayfa=1;const LIMIT=20; // sayfalama: sayfa başına kayıt
 const TABS=[['dash','Ana Ekran'],['emp','Çalışanlar'],['leave','İzin'],['ot','Mesai'],['perf','Performans'],['cand','İşe Alım'],['train','Eğitim'],['hol','Resmi Tatiller'],['rd','README']];
 const tbl=(h,rows)=>`<div class="scroll"><table><thead><tr>${h.map(x=>`<th>${x}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(c=>Array.isArray(c)?`<td class="badge ${c[1]}">${esc(c[0])}</td>`:`<td>${esc(c)}</td>`).join('')}</tr>`).join('')||`<tr><td colspan="${h.length}" class="empty">Kayıt yok</td></tr>`}</tbody></table></div>`;
 function cell(f,r){const v=r[f.k];if(f.t==='date')return fmtD(v);if(f.t==='money')return fmtM(v);if(f.e){const e=db.emp.find(x=>x.sicil===v);return e?v+' · '+e.ad:v}return v??''}
 function fill(m){const S=SH[m];let R=db[SH[m].src||m].filter(r=>{const s=S.f.map(f=>cell(f,r)).join(' ').toLowerCase();return(!view.q||s.includes(view.q.toLowerCase()))&&(!view.f||r[S.pf]===view.f)});
  if(view.s)R.sort((a,b)=>(a[view.s]>b[view.s]?1:a[view.s]<b[view.s]?-1:0)*view.d);
+ const Y=Math.max(1,Math.ceil(R.length/LIMIT));if(sayfa>Y)sayfa=Y;const P=R.slice((sayfa-1)*LIMIT,sayfa*LIMIT);
+ $('#pg').innerHTML=R.length>LIMIT?`<button data-a="pg" data-d="-1"${sayfa<2?' disabled':''}>Önceki</button><span>Sayfa ${sayfa} / ${Y}</span><button data-a="pg" data-d="1"${sayfa>=Y?' disabled':''}>Sonraki</button>`:'';
  const vis=S.f.filter(f=>!f.h),acts=r=>{let b=`<button data-a="edit" data-m="${m}" data-i="${r.id}" aria-label="Düzenle">Düzenle</button>`;
   if(m==='emp'&&r.durum==='Aktif')b+=`<button data-a="left" data-i="${r.id}">Ayrıldı yap</button>`;
   if((m==='leave'||m==='ot')&&r.durum==='Beklemede')b+=`<button data-a="ok" data-m="${m}" data-i="${r.id}">Onayla</button><button data-a="no" data-m="${m}" data-i="${r.id}">Reddet</button>`;
   if(m==='cand'){b+=`<button data-a="mv" data-d="-1" data-i="${r.id}" aria-label="Geri taşı">◀</button><button data-a="mv" data-d="1" data-i="${r.id}" aria-label="İleri taşı">▶</button>`;if(r.asama!=='Reddedildi')b+=`<button data-a="no" data-m="cand" data-i="${r.id}">Reddet</button>`;if(r.asama==='İşe alındı')b+=`<button class="pri" data-a="xfer" data-i="${r.id}">Çalışan olarak aktar</button>`}
   if(m!=='emp')b+=`<button data-a="del" data-m="${m}" data-i="${r.id}" aria-label="Sil">Sil</button>`;return b};
- $('#tbl').innerHTML=R.length?`<table><thead><tr>${vis.map(f=>`<th tabindex="0" data-a="sort" data-k="${f.k}">${f.l}${view.s===f.k?(view.d>0?' ▲':' ▼'):''}</th>`).join('')}${(S.c||[]).map(c=>`<th>${c[0]}</th>`).join('')}<th>İşlemler</th></tr></thead><tbody>${R.map(r=>`<tr>${vis.map(f=>`<td>${esc(cell(f,r))}</td>`).join('')}${(S.c||[]).map(c=>{const x=c[1](r);return`<td class="badge ${x[1]||''}">${esc(x[0])}</td>`}).join('')}<td>${acts(r)}</td></tr>`).join('')}</tbody></table>`:`<div class="empty">${db[SH[m].src||m].length?'Aramaya uyan kayıt yok':S.e+'. “Yeni” ile ekleyin.'}</div>`}
+ $('#tbl').innerHTML=R.length?`<table><thead><tr>${vis.map(f=>`<th tabindex="0" data-a="sort" data-k="${f.k}">${f.l}${view.s===f.k?(view.d>0?' ▲':' ▼'):''}</th>`).join('')}${(S.c||[]).map(c=>`<th>${c[0]}</th>`).join('')}<th>İşlemler</th></tr></thead><tbody>${P.map(r=>`<tr>${vis.map(f=>m==='emp'&&f.k==='ad'?`<td><button class="lnk" data-a="view" data-i="${r.id}">${esc(r.ad)}</button></td>`:`<td>${esc(cell(f,r))}</td>`).join('')}${(S.c||[]).map(c=>{const x=c[1](r);return`<td class="badge ${x[1]||''}">${esc(x[0])}</td>`}).join('')}<td>${acts(r)}</td></tr>`).join('')}</tbody></table>`:`<div class="empty">${db[SH[m].src||m].length?'Aramaya uyan kayıt yok':S.e+'. “Yeni” ile ekleyin.'}</div>`}
 function page(m){const S=SH[m],fo=S.pf&&S.f.find(f=>f.k===S.pf).o;
- return`<h2>${S.t}</h2><p class="note">${S.n}</p>${S.x?S.x():''}<div class="bar"><input type="search" id="q" aria-label="Ara" placeholder="Ara…" value="${esc(view.q)}">${fo?`<select id="ff" aria-label="Filtre"><option value="">Tümü</option>${fo.map(o=>`<option${o===view.f?' selected':''}>${o}</option>`).join('')}</select>`:''}${m==='hol'?'<button data-a="holreset">Varsayılana sıfırla</button>':''}<button class="pri" data-a="add" data-m="${m}">+ Yeni</button><button data-a="exp" data-m="${m}">CSV indir</button>${m==='emp'?'<button data-a="imp">CSV içe aktar</button>':''}</div><div id="tbl" class="scroll"></div>`}
+ return`<h2>${S.t}</h2><p class="note">${S.n}</p>${S.x?S.x():''}<div class="bar"><input type="search" id="q" aria-label="Ara" placeholder="Ara…" value="${esc(view.q)}">${fo?`<select id="ff" aria-label="Filtre"><option value="">Tümü</option>${fo.map(o=>`<option${o===view.f?' selected':''}>${o}</option>`).join('')}</select>`:''}${m==='hol'?'<button data-a="holreset">Varsayılana sıfırla</button>':''}<button class="pri" data-a="add" data-m="${m}">+ Yeni</button><button data-a="exp" data-m="${m}">CSV indir</button>${m==='emp'?'<button data-a="imp">CSV içe aktar</button>':''}</div><div id="tbl" class="scroll"></div><div id="pg" class="bar" style="justify-content:center;align-items:center"></div>`}
 function dash(){const t=today(),A=db.emp.filter(e=>e.durum==='Aktif'),nm=s=>(db.emp.find(e=>e.sicil===s)||{ad:s}).ad,
  off=db.leave.filter(l=>l.durum==='Onaylandı'&&l.bas<=t&&t<=l.bit).map(l=>nm(l.emp)),
  bd=A.filter(e=>e.dogum).map(e=>{const d=D(e.dogum),y=+t.slice(0,4);let n=D(y+'-'+e.dogum.slice(5));if(n<D(t))n=D((y+1)+'-'+e.dogum.slice(5));return[e.ad,Math.round((n-D(t))/864e5)]}).filter(x=>x[1]<=30).sort((a,b)=>a[1]-b[1]),
@@ -171,7 +181,7 @@ function dash(){const t=today(),A=db.emp.filter(e=>e.durum==='Aktif'),nm=s=>(db.
  c=(l,v)=>`<div class="card">${l}<b>${v}</b></div>`;
  return`<h2>Ana Ekran</h2><p class="note">Yöneticinin günlük bakışı: kadro, devamsızlık, bekleyen onaylar ve süresi yaklaşan yükümlülükler tek ekranda.</p><div class="cards">${c('Aktif çalışan',A.length)}${c('Bugün izinde',off.length+(off.length?'<small> '+esc(off.join(', '))+'</small>':''))}${c('Onay bekleyen izin',db.leave.filter(l=>l.durum==='Beklemede').length)}${c('Onay bekleyen mesai',db.ot.filter(l=>l.durum==='Beklemede').length)}${c('Aylık brüt maaş yükü',fmtM(A.reduce((s,e)=>s+(+e.maas||0),0)))}${c('Bu ay giren / ayrılan',db.emp.filter(e=>(e.giris||'').slice(0,7)===mo).length+' / '+db.emp.filter(e=>(e.ayrilis||'').slice(0,7)===mo).length)}</div>
  <h3>Departman dağılımı</h3><canvas id="cv" role="img" aria-label="Departman bazlı çalışan dağılımı"></canvas>
- <h3>Yaklaşan doğum günleri (30 gün)</h3>${tbl(['Çalışan','Kaç gün sonra'],bd.map(x=>[x[0],x[1]===0?'Bugün':x[1]]))}<h3>Eğitim uyarıları</h3>${tbl(['Eğitim','Durum'],tw)}`}
+ <h3>Yaklaşan doğum günleri (30 gün)</h3>${tbl(['Çalışan','Kaç gün sonra'],bd.map(x=>[x[0],x[1]===0?'Bugün':x[1]]))}<h3>Eğitim uyarıları</h3>${tbl(['Eğitim','Durum'],tw)}<h3>Yedekleme</h3><p class="note">Veriler tarayıcıda tutulduğu için günlük yedek almanız önerilir.</p><div class="bar"><button data-a="bk">Tüm Veriyi Yedekle (JSON)</button><button data-a="rs">Yedekten Geri Yükle</button></div>`}
 function chart(){const c=$('#cv');if(!c)return;const cs=getComputedStyle(document.documentElement),m={};db.emp.filter(e=>e.durum==='Aktif').forEach(e=>m[e.dept]=(m[e.dept]||0)+1);
  const k=Object.keys(m),mx=Math.max(1,...Object.values(m)),w=c.width=c.clientWidth,h=c.height=Math.max(60,k.length*34+12),x=c.getContext('2d');x.font='13px system-ui';x.textBaseline='middle';
  k.forEach((d,i)=>{const y=8+i*34,bw=(w-190)*m[d]/mx;x.fillStyle=cs.getPropertyValue('--fg');x.fillText(d.slice(0,16),8,y+12);x.fillStyle=cs.getPropertyValue('--ac');x.fillRect(150,y,bw,24);x.fillStyle=cs.getPropertyValue('--fg');x.fillText(m[d],158+bw,y+12)})}
@@ -189,7 +199,8 @@ function inp(f,v){const a=`name="${f.k}"`;
  if(f.t==='area')return`<textarea ${a} rows="2">${esc(v)}</textarea>`;
  const n=['n','money','number'].includes(f.t);return`<input ${a} type="${n?'number':f.t||'text'}" value="${esc(v)}"${f.t==='n'?' min="1" max="5" step="1"':n?' step="any"':''}>`}
 function form(m,r,pre){const S=SH[m],v=r||pre||{};$('#dlg').innerHTML=`<form id="fm" novalidate data-m="${m}" data-i="${r?r.id:''}"><h3>${r?'Düzenle':'Yeni kayıt'} · ${S.t}</h3><div class="g">${S.f.map(f=>`<label>${f.l}${f.r?' *':''}${inp(f,v[f.k]??dv(f))}</label>`).join('')}</div><div id="err" class="er" role="alert"></div><div class="bar"><button class="pri" type="submit">Kaydet</button><button type="button" data-a="close">İptal</button></div></form>`;$('#dlg').showModal()}
-document.addEventListener('submit',e=>{e.preventDefault();const fm=e.target,m=fm.dataset.m,id=fm.dataset.i,S=SH[m],r={},er=[];
+document.addEventListener('submit',e=>{e.preventDefault();if(e.target.id!=='fm')return; // başlık eşleme formu (#mp) kendi işleyicisinde
+ const fm=e.target,m=fm.dataset.m,id=fm.dataset.i,S=SH[m],r={},er=[];
  S.f.forEach(f=>{let v=fm.elements[f.k].value.trim();if(['n','money','number'].includes(f.t))v=v===''?'':+v;r[f.k]=v;
   if(f.r&&v==='')er.push(f.l+' zorunludur.');else if(f.t==='n'&&v!==''&&(v<1||v>5))er.push(f.l+' 1 ile 5 arasında olmalıdır.');
   if(f.u&&v&&db[SH[m].src||m].some(x=>x[f.k]===v&&x.id!==id))er.push('Bu '+f.l.toLowerCase()+' zaten kayıtlı.')});
@@ -215,9 +226,40 @@ document.addEventListener('submit',e=>{if(e.target.id!=='mp')return;const el=e.t
   if(!r.sicil||!r.ad||db.emp.some(x=>x.sicil===r.sicil)){sk++;return}r.dept=r.dept||'-';db.emp.push(r);ok++});
  save();$('#dlg').close();render();ask(ok+' çalışan eklendi, '+sk+' satır atlandı (eksik veya mükerrer sicil).')},true);
 
+/* Çalışan profil kartı: tüm geçmiş db'den sicile göre filtrelenir */
+function empProfile(sc){const e=db.emp.find(x=>x.sicil===sc);if(!e)return;
+ const h=entitle(e.giris,e.dogum),u=usedAnnual(db,sc,today().slice(0,4)),k=h-u,
+ ini=e.ad.split(/\s+/).filter(Boolean).map(w=>w[0]).slice(0,2).join('').toLocaleUpperCase('tr'),
+ ln=(l,v,c)=>`<div>${l}: <b class="${c||''}">${esc(v)}</b></div>`,
+ sec=(t,hd,rows)=>`<h3>${t}</h3>`+tbl(hd,rows),
+ ov=(l,v)=>`<div>${l}: ${v?`<b>${esc(v)}</b>`:'<span style="color:var(--mut)">Belirtilmedi</span>'}</div>`;
+ $('#dlg').innerHTML=`<div style="display:flex;gap:12px;align-items:center"><div class="av">${e.foto?`<img src="${e.foto}" alt="">`:esc(ini)}</div><div><b style="font-size:18px">${esc(e.ad)}</b><br>${esc(e.poz)} · ${esc(e.dept)}<div class="bar" style="margin:6px 0 0"><button data-a="foto" data-s="${esc(sc)}">${e.foto?'Fotoğrafı değiştir':'Fotoğraf ekle'}</button>${e.foto?`<button data-a="fotoDel" data-s="${esc(sc)}">Kaldır</button>`:''}</div></div></div>
+ <div class="g2"><div class="card"><b style="font-size:15px">Özet</b>${ln('Sicil',e.sicil)}${ln('İşe giriş',fmtD(e.giris))}${ln('Kıdem',tenure(e.giris))}${ln('Sözleşme',e.tur)}${ln('Durum',e.durum)}</div>
+ <div class="card"><b style="font-size:15px">İzin özeti (yıllık)</b>${ln('Toplam hak',h+' gün')}${ln('Kullanılan',u+' gün')}${ln('Kalan',k+' gün',k<0?'er':'')}</div></div>
+ <h3>Özlük Bilgileri</h3><div class="card" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:6px 16px;word-break:break-all">${ov('TC Kimlik No',e.tc)}${ov('Doğum yeri',e.dogumYeri)}${ov('Medeni durum',e.medeni)}${ov('Askerlik',e.askerlik)}${ov('Kan grubu',e.kan)}${ov('Banka',e.banka)}${ov('IBAN',e.iban)}${ov('Acil durum kişisi',e.acilKisi)}${ov('Acil durum tel',e.acilTel)}</div>
+ ${sec('İzin Geçmişi',['Tür','Tarih','Süre','Durum'],db.leave.filter(l=>l.emp===sc).map(l=>[l.tur,fmtD(l.bas)+' – '+fmtD(l.bit),workDays(l.bas,l.bit)+' gün',l.durum]))}
+ ${sec('Fazla Mesai',['Tarih','Tür','Süre','Durum'],db.ot.filter(o=>o.emp===sc).map(o=>[fmtD(o.tarih),o.tur,otHours(o.bas,o.bit).toFixed(1)+' sa',o.durum]))}
+ ${sec('Eğitimler',['Eğitim','Geçerlilik bitişi','Durum'],db.train.filter(r=>r.emp===sc).map(r=>[r.ad,fmtD(r.bitis),trainSt(r)]))}
+ ${sec('Performans',['Dönem','Puan','Sonuç','Prim'],db.perf.filter(r=>r.emp===sc).map(r=>[r.yil+' Ç'+r.q,score(r).toFixed(2),label(score(r)),fmtM((+e.maas||0)*bonusPct(score(r),db.p.t)/100)]))}
+ <div class="bar"><button class="pri" data-a="close">Kapat</button></div>`;$('#dlg').showModal()}
+/* Yedekten geri yükleme: önce doğrula, sonra onay al, sonra db'yi değiştir */
+$('#jfile').addEventListener('change',e=>{const f=e.target.files[0];e.target.value='';if(!f)return;
+ f.text().then(t=>{let o;try{o=JSON.parse(t)}catch(x){}
+  if(!o||typeof o!=='object'||!['emp','leave','ot','perf','cand','train'].every(k=>Array.isArray(o[k])))return ask('Geçersiz yedek dosyası: bu uygulamanın aldığı bir JSON yedeği seçin.');
+  ask('Mevcut tüm veri yedekteki verilerle değiştirilecek. Devam edilsin mi?',()=>{db=o;if(!Array.isArray(db.holidays))db.holidays=defaultHolidays();if(!db.p)db.p=seed().p;save();render();ask('Yedek geri yüklendi.')})})});
+/* Fotoğraf: 240x240 kare JPEG'e küçültülür (~15 KB), localStorage kotası dolmasın; yedeğe de dahildir */
+let fotoSc='';
+$('#pfile').addEventListener('change',e=>{const f=e.target.files[0];e.target.value='';if(!f)return;
+ const rd=new FileReader(),im=new Image();
+ const bad=()=>ask('Bu dosya okunamadı. JPG veya PNG gibi bir görsel seçin.');
+ rd.onerror=bad;im.onerror=bad;rd.onload=()=>{im.src=rd.result};
+ im.onload=()=>{const c=document.createElement('canvas'),n=240,m=Math.min(im.width,im.height);c.width=c.height=n;
+  c.getContext('2d').drawImage(im,(im.width-m)/2,(im.height-m)/2,m,m,0,0,n,n);
+  const x=db.emp.find(z=>z.sicil===fotoSc);if(!x)return;x.foto=c.toDataURL('image/jpeg',.8);save();empProfile(fotoSc)};
+ rd.readAsDataURL(f)});
 /* Olaylar */
 document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)return;const{a,m,i}=b.dataset,row=k=>db[k].find(x=>x.id===i);
- if(a==='tab'){tab=b.dataset.t;view={q:'',f:'',s:'',d:1};render()}
+ if(a==='tab'){tab=b.dataset.t;view={q:'',f:'',s:'',d:1};sayfa=1;render()}
  else if(a==='add')form(m);else if(a==='edit')form(m,row(SH[m].src||m));else if(a==='close')$('#dlg').close();
  else if(a==='del')ask('Bu kayıt silinsin mi?',()=>{db[SH[m].src||m]=db[SH[m].src||m].filter(x=>x.id!==i);save();render()});
  else if(a==='ok'||a==='no'){const r=row(m);if(m==='cand')r.asama='Reddedildi';else r.durum=a==='ok'?'Onaylandı':'Reddedildi';save();render()}
@@ -225,11 +267,17 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b
  else if(a==='mv'){const r=row('cand'),x=ST.indexOf(r.asama);r.asama=x===4?ST[0]:ST[Math.min(3,Math.max(0,x+ +b.dataset.d))];save();render()}
  else if(a==='xfer'){const r=row('cand');form('emp',null,{ad:r.ad,poz:r.poz,giris:today(),durum:'Aktif',tur:'Deneme'})}
  else if(a==='holreset')ask('Resmi tatil listesi varsayılana (2026) sıfırlansın mı? Elle yaptığınız değişiklikler silinir.',()=>{db.holidays=defaultHolidays();save();render()});
+ else if(a==='pg'){sayfa+=+b.dataset.d;fill(tab)}
+ else if(a==='bk'){const l=document.createElement('a');l.href=URL.createObjectURL(new Blob([JSON.stringify(db,null,1)],{type:'application/json'}));l.download='ik-yedek-'+today()+'.json';l.click()}
+ else if(a==='rs')$('#jfile').click();
+ else if(a==='view')empProfile(row('emp').sicil);
+ else if(a==='foto'){fotoSc=b.dataset.s;$('#pfile').click()}
+ else if(a==='fotoDel'){const x=db.emp.find(z=>z.sicil===b.dataset.s);if(x){delete x.foto;save();empProfile(x.sicil)}}
  else if(a==='exp')exportCSV(m);else if(a==='imp')$('#file').click();
  else if(a==='sort'){const k=b.dataset.k;view.d=view.s===k?-view.d:1;view.s=k;fill(tab)}});
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.matches('th[data-a]'))e.target.click()});
-document.addEventListener('input',e=>{if(e.target.id==='q'){view.q=e.target.value;fill(tab)}});
-document.addEventListener('change',e=>{const t=e.target;if(t.id==='ff'){view.f=t.value;fill(tab)}
+document.addEventListener('input',e=>{if(e.target.id==='q'){view.q=e.target.value;sayfa=1;fill(tab)}});
+document.addEventListener('change',e=>{const t=e.target;if(t.id==='ff'){view.f=t.value;sayfa=1;fill(tab)}
  if(t.dataset.p!==undefined){if(t.dataset.p==='base')db.p.base=+t.value;else db.p.t[+t.dataset.p][1]=+t.value;save();render()}});
 $('#th').addEventListener('click',()=>{const r=document.documentElement,d=r.dataset.theme?r.dataset.theme==='dark':matchMedia('(prefers-color-scheme:dark)').matches;r.dataset.theme=d?'light':'dark';try{localStorage.setItem('ik-theme',r.dataset.theme)}catch(e){}if(tab==='dash')chart()});
 try{const t=localStorage.getItem('ik-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}
